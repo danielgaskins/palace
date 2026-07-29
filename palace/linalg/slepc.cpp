@@ -1765,8 +1765,12 @@ PetscReal SlepcNEPSolver::GetResidualNorm(PetscScalar l, const ComplexVector &x,
   if (funcA2)
   {
     auto A2 = (*funcA2)(std::abs(l.imag()));
-    A2->AddMult(x, r, 1.0 + 0.0i);
+    if (A2)
+    {
+      A2->AddMult(x, r, 1.0 + 0.0i);
+    }
   }
+  SetEssentialDiagonal(*opK, x, r);
   return linalg::Norml2(GetComm(), r);
 }
 
@@ -2137,9 +2141,11 @@ PetscErrorCode __pc_apply_NEP(PC pc, Vec x, Vec y)
     if (ctx->lambda.imag() == 0.0)
       ctx->lambda = ctx->sigma;
     ctx->opA2_pc = (*ctx->funcA2)(std::abs(ctx->lambda.imag()));
-    ctx->opA_pc = palace::BuildParSumOperator(
-        {1.0 + 0.0i, ctx->lambda, ctx->lambda * ctx->lambda, 1.0 + 0.0i},
-        {ctx->opK, ctx->opC, ctx->opM, ctx->opA2_pc.get()}, true);
+    ctx->opA_pc = palace::BuildComplexSumOperator({{1.0 + 0.0i, ctx->opK},
+                                                   {ctx->lambda, ctx->opC},
+                                                   {ctx->lambda * ctx->lambda, ctx->opM},
+                                                   {1.0 + 0.0i, ctx->opA2_pc.get()}},
+                                                  *ctx->opK);
     ctx->opP_pc = (*ctx->funcP)(std::complex<double>(1.0, 0.0), ctx->lambda,
                                 ctx->lambda * ctx->lambda, ctx->lambda.imag());
     ctx->opInv->SetOperators(*ctx->opA_pc, *ctx->opP_pc);
@@ -2168,9 +2174,11 @@ PetscErrorCode __form_NEP_function(NEP nep, PetscScalar lambda, Mat fun, Mat B, 
   PetscCall(MatShellGetContext(fun, (void **)&ctxF));
   // A(λ) = K + λ C + λ² M + A2(Im{λ}).
   ctxF->opA2 = (*ctxF->funcA2)(std::abs(lambda.imag()));
-  ctxF->opA = palace::BuildParSumOperator(
-      {1.0 + 0.0i, lambda, lambda * lambda, 1.0 + 0.0i},
-      {ctxF->opK, ctxF->opC, ctxF->opM, ctxF->opA2.get()}, true);
+  ctxF->opA = palace::BuildComplexSumOperator({{1.0 + 0.0i, ctxF->opK},
+                                               {lambda, ctxF->opC},
+                                               {lambda * lambda, ctxF->opM},
+                                               {1.0 + 0.0i, ctxF->opA2.get()}},
+                                              *ctxF->opK);
   ctxF->lambda = lambda;
   ctxF->new_lambda = true;  // flag to update the preconditioner in SLP
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -2190,12 +2198,12 @@ PetscErrorCode __form_NEP_jacobian(NEP nep, PetscScalar lambda, Mat fun, void *c
   if (ctxF->opA2 || ctxF->opA2p)
   {
     std::complex<double> denom = std::complex<double>(0.0, eps * std::abs(lambda.imag()));
-    ctxF->opAJ = palace::BuildParSumOperator({1.0 / denom, -1.0 / denom},
-                                             {ctxF->opA2p.get(), ctxF->opA2.get()}, true);
+    ctxF->opAJ = palace::BuildComplexSumOperator(
+        {{1.0 / denom, ctxF->opA2p.get()}, {-1.0 / denom, ctxF->opA2.get()}});
   }
-  ctxF->opJ = palace::BuildParSumOperator(
-      {0.0 + 0.0i, 1.0 + 0.0i, 2.0 * lambda, 1.0 + 0.0i},
-      {ctxF->opK, ctxF->opC, ctxF->opM, ctxF->opAJ.get()}, true);
+  ctxF->opJ = palace::BuildComplexSumOperator(
+      {{1.0 + 0.0i, ctxF->opC}, {2.0 * lambda, ctxF->opM}, {1.0 + 0.0i, ctxF->opAJ.get()}},
+      *ctxF->opK);
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
