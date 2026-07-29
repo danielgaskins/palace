@@ -2186,9 +2186,13 @@ PetscErrorCode __form_NEP_jacobian(NEP nep, PetscScalar lambda, Mat fun, void *c
   ctxF->opA2 = (*ctxF->funcA2)(std::abs(lambda.imag()));
   const auto eps = std::sqrt(std::numeric_limits<double>::epsilon());
   ctxF->opA2p = (*ctxF->funcA2)(std::abs(lambda.imag()) * (1.0 + eps));
-  std::complex<double> denom = std::complex<double>(0.0, eps * std::abs(lambda.imag()));
-  ctxF->opAJ = palace::BuildParSumOperator({1.0 / denom, -1.0 / denom},
-                                           {ctxF->opA2p.get(), ctxF->opA2.get()}, true);
+  ctxF->opAJ.reset();
+  if (ctxF->opA2 || ctxF->opA2p)
+  {
+    std::complex<double> denom = std::complex<double>(0.0, eps * std::abs(lambda.imag()));
+    ctxF->opAJ = palace::BuildParSumOperator({1.0 / denom, -1.0 / denom},
+                                             {ctxF->opA2p.get(), ctxF->opA2.get()}, true);
+  }
   ctxF->opJ = palace::BuildParSumOperator(
       {0.0 + 0.0i, 1.0 + 0.0i, 2.0 * lambda, 1.0 + 0.0i},
       {ctxF->opK, ctxF->opC, ctxF->opM, ctxF->opAJ.get()}, true);
